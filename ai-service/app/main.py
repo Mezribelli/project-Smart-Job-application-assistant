@@ -1,3 +1,4 @@
+import os
 from subprocess import TimeoutExpired
 
 from fastapi import FastAPI, HTTPException
@@ -12,9 +13,27 @@ app = FastAPI(
     description="AI capabilities for the Smart Job Application Assistant.",
 )
 
+DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def allowed_origins() -> list[str]:
+    """Local development origins, plus the sandbox preview origin when Base44 runs this service.
+
+    The preview serves the frontend from https://3000-<public host suffix>, a different site from
+    this service, so that origin has to be allowed. Gated on BASE44_PREVIEW_MODE being exactly "1";
+    when the flag is absent or anything else, the allowlist keeps its original behaviour.
+    """
+    origins = list(DEFAULT_ORIGINS)
+    if os.environ.get("BASE44_PREVIEW_MODE") == "1":
+        suffix = os.environ.get("BASE44_PUBLIC_HOST_SUFFIX", "").strip()
+        if suffix:
+            origins.append(f"https://3000-{suffix}")
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -8,13 +8,11 @@ import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
-@CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"})
 public class ApiExceptionHandler {
 
     @ExceptionHandler({ProfileNotFoundException.class, JobNotFoundException.class,

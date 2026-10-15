@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/applications")
-@CrossOrigin(origins = "http://localhost:5173")
 public class ApplicationController {
     private final ApplicationRepository applications;
     private final ProfileRepository profiles;

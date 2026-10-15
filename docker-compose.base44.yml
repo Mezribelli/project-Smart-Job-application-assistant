@@ -1,0 +1,119 @@
+# Development stack for the Smart Job Application Assistant (Base44 sandbox).
+#
+# Every application service runs FROM THE CLONED SOURCE: the repository is bind-mounted and the
+# service runs its live-reload development command, so edits show up without rebuilding an image.
+# Only PostgreSQL uses a prebuilt image (infrastructure the user does not edit).
+#
+#   web entry point : http://localhost:3000  (Vite dev server)
+#   backend API     : http://localhost:8080  (Spring Boot)
+#   AI service      : http://localhost:8000  (FastAPI / uvicorn --reload)
+#
+# The repo's own docker-compose.yml only starts PostgreSQL for a manual, host-installed workflow;
+# this file is the reproducible one-command stack.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      POSTGRES_DB: smart_jobs
+      POSTGRES_USER: smart_jobs
+      POSTGRES_PASSWORD: smart_jobs
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smart_jobs -d smart_jobs"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: maven:3.9-eclipse-temurin-21
+    restart: on-failure
+    working_dir: /app
+    # No hot reload in this project (spring-boot-devtools is not a dependency): restart the service
+    # after Java changes with `docker compose -f docker-compose.base44.yml restart backend`.
+    command: ["sh", "-ec", "mvn -DskipTests spring-boot:run"]
+    volumes:
+      - ./backend:/app
+      - backend-m2:/root/.m2
+    environment:
+      # The in-repo application.yml defaults to localhost; inside compose the database is a service.
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/smart_jobs
+      - SPRING_DATASOURCE_USERNAME=smart_jobs
+      - SPRING_DATASOURCE_PASSWORD=smart_jobs
+      - BACKEND_PORT=8080
+      # Platform sets these; when unset the API keeps its original localhost-only CORS allowlist.
+      - BASE44_PREVIEW_MODE
+      - BASE44_PUBLIC_HOST_SUFFIX
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 300s
+
+  ai-service:
+    image: python:3.12-slim
+    restart: on-failure
+    working_dir: /app
+    command: ["sh", "-ec", "pip install --no-input -q -r requirements.txt && exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"]
+    volumes:
+      - ./ai-service:/app
+      - ai-pip-cache:/root/.cache/pip
+    environment:
+      - BASE44_PREVIEW_MODE
+      - BASE44_PUBLIC_HOST_SUFFIX
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  frontend:
+    image: node:22
+    restart: on-failure
+    working_dir: /app
+    # Preview-mode URLs are exported only when the platform provides its public host suffix, so the
+    # app falls back to its own http://localhost:8080 / http://localhost:8000 defaults elsewhere.
+    command:
+      - sh
+      - -ec
+      - |
+        if [ -n "$$BASE44_PUBLIC_HOST_SUFFIX" ]; then
+          export VITE_API_BASE_URL="https://8080-$$BASE44_PUBLIC_HOST_SUFFIX"
+          export VITE_AI_SERVICE_URL="https://8000-$$BASE44_PUBLIC_HOST_SUFFIX"
+        fi
+        npm ci --no-audit --no-fund
+        exec npm run dev -- --host 0.0.0.0 --port 5173
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-npm-cache:/root/.npm
+    environment:
+      # Platform-provided in the sandbox; the startup command turns this into the API base URLs.
+      - BASE44_PUBLIC_HOST_SUFFIX
+      # Vite >= 6.1 appends this to server.allowedHosts so the proxied preview host is accepted.
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    ports:
+      - "3000:5173"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  postgres-data:
+  backend-m2:
+  ai-pip-cache:
+  frontend-node-modules:
+  frontend-npm-cache:

@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/matching")
-@CrossOrigin(origins = "http://localhost:5173")
 public class MatchingController {
 
     private final ProfileRepository profiles;

@@ -58,6 +58,45 @@ An intelligent platform to simplify and automate the job application lifecycle:
    npm run dev
    ```
 
+## One-command local stack (Docker Compose)
+
+`docker-compose.base44.yml` runs the whole platform from the cloned source (no images to rebuild
+after an edit):
+
+```bash
+docker compose -f docker-compose.base44.yml up -d --build
+```
+
+| Service | URL |
+| --- | --- |
+| Frontend (Vite dev server) | http://localhost:3000 |
+| Backend API | http://localhost:8080 |
+| AI service | http://localhost:8000 |
+
+The backend and AI service only allow browser calls from known origins:
+`http://localhost:5173` and `http://127.0.0.1:5173`. When the app is served from a hosted preview
+instead, that preview origin is appended as well — this happens only while `BASE44_PREVIEW_MODE` is
+exactly `1` and `BASE44_PUBLIC_HOST_SUFFIX` is set, and the frontend derives its
+`VITE_API_BASE_URL` / `VITE_AI_SERVICE_URL` from the same value. Unset the flag (or run the stack
+anywhere else) and both services keep the original localhost-only allowlist and the frontend falls
+back to its `http://localhost:8080` / `http://localhost:8000` defaults.
+
+Backend changes need a restart (`docker compose -f docker-compose.base44.yml restart backend`);
+the frontend and AI service reload on their own.
+
+### Database note after an enum change
+
+`ApplicationStatus` (Draft, Applied, Interviewing, Offered, Rejected) is mirrored by a CHECK
+constraint Hibernate creates on `job_applications.status`, and `ddl-auto: update` never alters an
+existing constraint. A database created before a status rename therefore rejects the new values
+with a `409 Database constraint violation`. Recreate the local database once after such a change:
+
+```bash
+docker compose -f docker-compose.base44.yml down
+docker volume rm app_postgres-data
+docker compose -f docker-compose.base44.yml up -d
+```
+
 ## Health checks
 
 - Backend: `GET http://localhost:8080/api/health`

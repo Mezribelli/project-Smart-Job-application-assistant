@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/documents")
-@CrossOrigin(origins = "http://localhost:5173")
 public class DocumentController {
     private final DocumentRepository documents;
     private final ProfileRepository profiles;
