@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/jobs")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"${app.cors.allowed-origins:http://localhost:5173}", "${app.cors.sandbox-origin:}"})
 public class JobOfferController {
 
     private final JobOfferRepository jobs;

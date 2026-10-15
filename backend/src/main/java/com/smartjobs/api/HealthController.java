@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
-@org.springframework.web.bind.annotation.CrossOrigin(origins = "http://localhost:5173")
+@org.springframework.web.bind.annotation.CrossOrigin(origins = {"${app.cors.allowed-origins:http://localhost:5173}", "${app.cors.sandbox-origin:}"})
 public class HealthController {
 
     @GetMapping("/health")

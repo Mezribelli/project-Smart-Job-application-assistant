@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/profiles")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"${app.cors.allowed-origins:http://localhost:5173}", "${app.cors.sandbox-origin:}"})
 public class ProfileController {
 
     private final ProfileRepository profiles;

@@ -3,6 +3,7 @@ package com.smartjobs.profile;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -35,7 +36,7 @@ public class Profile {
     private String desiredEmploymentType;
     private Integer yearsOfExperience;
 
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "profile_skills", joinColumns = @JoinColumn(name = "profile_id"))
     private List<String> skills = new ArrayList<>();
 
