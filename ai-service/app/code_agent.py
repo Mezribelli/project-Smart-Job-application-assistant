@@ -51,6 +51,7 @@ def analyze_source(source: str) -> dict[str, object]:
 def generate_tests(source: str) -> tuple[dict[str, object], str]:
     analysis = analyze_source(source)
     functions = analysis["functions"]
+    classes = analysis["classes"]
     test_lines = [
         "import pytest",
         "",
@@ -60,6 +61,16 @@ def generate_tests(source: str) -> tuple[dict[str, object], str]:
         "def test_source_is_valid_python():",
         "    compile(SOURCE, '<submitted-source>', 'exec')",
     ]
+    for cls_name in classes:
+        test_lines.extend(
+            [
+                "",
+                f"def test_{cls_name}_class_is_defined():",
+                f"    namespace = {{}}",
+                "    exec(compile(SOURCE, '<submitted-source>', 'exec'), namespace)",
+                f"    assert isinstance(namespace.get({cls_name!r}), type)",
+            ]
+        )
     for name in functions:
         test_lines.extend(
             [
@@ -67,10 +78,16 @@ def generate_tests(source: str) -> tuple[dict[str, object], str]:
                 f"def test_{name}_is_defined():",
                 f"    namespace = {{}}",
                 "    exec(compile(SOURCE, '<submitted-source>', 'exec'), namespace)",
-                f"    assert callable(namespace.get({name!r}))",
+                f"    target = namespace.get({name!r})",
+                "    if target is None:",
+                "        for obj in namespace.values():",
+                f"            if isinstance(obj, type) and hasattr(obj, {name!r}):",
+                f"                target = getattr(obj, {name!r})",
+                "                break",
+                "    assert callable(target)",
             ]
         )
-    if not functions:
+    if not functions and not classes:
         test_lines.extend(
             [
                 "",

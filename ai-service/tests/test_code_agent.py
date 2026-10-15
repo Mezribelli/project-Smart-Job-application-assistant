@@ -1,4 +1,4 @@
-from app.code_agent import analyze_source, generate_tests
+from app.code_agent import analyze_source, execute_tests, generate_tests
 
 
 def test_analyze_source_finds_functions_and_imports() -> None:
@@ -13,6 +13,20 @@ def test_generate_tests_returns_executable_baseline() -> None:
 
     assert analysis["functions"] == ["add"]
     assert "test_add_is_defined" in tests
+    result = execute_tests(tests)
+    assert result["status"] == "OK"
+
+
+def test_generate_tests_with_class_and_methods() -> None:
+    source = "class Calculator:\n    def multiply(self, a, b):\n        return a * b\n"
+    analysis, tests = generate_tests(source)
+
+    assert "Calculator" in analysis["classes"]
+    assert "multiply" in analysis["functions"]
+    assert "test_Calculator_class_is_defined" in tests
+    assert "test_multiply_is_defined" in tests
+    result = execute_tests(tests)
+    assert result["status"] == "OK"
 
 
 def test_invalid_python_is_rejected() -> None:
@@ -22,3 +36,4 @@ def test_invalid_python_is_rejected() -> None:
         assert "Invalid Python syntax" in str(error)
     else:
         raise AssertionError("Invalid source should be rejected")
+

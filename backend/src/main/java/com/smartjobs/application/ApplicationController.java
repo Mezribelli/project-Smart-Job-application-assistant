@@ -1,9 +1,11 @@
 package com.smartjobs.application;
 
+import com.smartjobs.job.JobNotFoundException;
 import com.smartjobs.job.JobOffer;
-import com.smartjobs.job.JobOfferController;
+import com.smartjobs.job.JobOfferRepository;
 import com.smartjobs.profile.Profile;
-import com.smartjobs.profile.ProfileController;
+import com.smartjobs.profile.ProfileNotFoundException;
+import com.smartjobs.profile.ProfileRepository;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -15,10 +17,10 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class ApplicationController {
     private final ApplicationRepository applications;
-    private final ProfileController profiles;
-    private final JobOfferController jobs;
+    private final ProfileRepository profiles;
+    private final JobOfferRepository jobs;
 
-    public ApplicationController(ApplicationRepository applications, ProfileController profiles, JobOfferController jobs) {
+    public ApplicationController(ApplicationRepository applications, ProfileRepository profiles, JobOfferRepository jobs) {
         this.applications = applications; this.profiles = profiles; this.jobs = jobs;
     }
 
@@ -26,8 +28,8 @@ public class ApplicationController {
     @ResponseStatus(HttpStatus.CREATED)
     public JobApplication create(@RequestParam Long profileId, @RequestParam Long jobId,
                                  @RequestParam(required = false, defaultValue = "") String notes) {
-        Profile profile = profiles.get(profileId);
-        JobOffer job = jobs.get(jobId);
+        Profile profile = profiles.findById(profileId).orElseThrow(() -> new ProfileNotFoundException(profileId));
+        JobOffer job = jobs.findById(jobId).orElseThrow(() -> new JobNotFoundException(jobId));
         return applications.save(new JobApplication(profile, job, notes));
     }
 

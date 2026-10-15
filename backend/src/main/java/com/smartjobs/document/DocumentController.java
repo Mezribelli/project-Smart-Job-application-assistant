@@ -1,9 +1,11 @@
 package com.smartjobs.document;
 
+import com.smartjobs.job.JobNotFoundException;
 import com.smartjobs.job.JobOffer;
-import com.smartjobs.job.JobOfferController;
+import com.smartjobs.job.JobOfferRepository;
 import com.smartjobs.profile.Profile;
-import com.smartjobs.profile.ProfileController;
+import com.smartjobs.profile.ProfileNotFoundException;
+import com.smartjobs.profile.ProfileRepository;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -14,10 +16,10 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class DocumentController {
     private final DocumentRepository documents;
-    private final ProfileController profiles;
-    private final JobOfferController jobs;
+    private final ProfileRepository profiles;
+    private final JobOfferRepository jobs;
 
-    public DocumentController(DocumentRepository documents, ProfileController profiles, JobOfferController jobs) {
+    public DocumentController(DocumentRepository documents, ProfileRepository profiles, JobOfferRepository jobs) {
         this.documents = documents;
         this.profiles = profiles;
         this.jobs = jobs;
@@ -27,8 +29,8 @@ public class DocumentController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApplicationDocument generate(@RequestParam Long profileId, @RequestParam Long jobId,
                                         @RequestParam DocumentType type) {
-        Profile profile = profiles.get(profileId);
-        JobOffer job = jobs.get(jobId);
+        Profile profile = profiles.findById(profileId).orElseThrow(() -> new ProfileNotFoundException(profileId));
+        JobOffer job = jobs.findById(jobId).orElseThrow(() -> new JobNotFoundException(jobId));
         return documents.save(new ApplicationDocument(profile, job, type, createDraft(profile, job, type)));
     }
 
@@ -56,14 +58,19 @@ public class DocumentController {
     }
 
     private String createDraft(Profile profile, JobOffer job, DocumentType type) {
+        String titleLine = (profile.getProfessionalTitle() != null && !profile.getProfessionalTitle().isBlank())
+                ? profile.getProfessionalTitle() + "\n"
+                : "";
+        String skillsText = profile.getSkills().isEmpty() ? "Not specified" : String.join(", ", profile.getSkills());
+
         if (type == DocumentType.CV) {
-            return "CV\n\n" + profile.getFullName() + "\n" + profile.getProfessionalTitle()
-                    + "\n\nSkills: " + String.join(", ", profile.getSkills())
+            return "CV\n\n" + profile.getFullName() + "\n" + titleLine
+                    + "\nSkills: " + skillsText
                     + "\n\nTarget role: " + job.getTitle() + " at " + job.getCompany();
         }
         return "Cover letter\n\nDear " + job.getCompany() + " recruitment team,\n\n"
                 + "I am " + profile.getFullName() + ", applying for the " + job.getTitle()
-                + " position. My relevant skills include " + String.join(", ", profile.getSkills()) + ".\n\n"
+                + " position. My relevant skills include " + skillsText + ".\n\n"
                 + "Sincerely,\n" + profile.getFullName();
     }
 }

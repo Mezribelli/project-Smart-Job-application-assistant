@@ -1,8 +1,10 @@
 package com.smartjobs.profile;
 
 import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -12,6 +14,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Entity
 @Table(name = "profiles")
@@ -30,12 +33,13 @@ public class Profile {
 
     private String phone;
     private String professionalTitle;
+    @Column(columnDefinition = "TEXT")
     private String education;
     private String preferredLocation;
     private String desiredEmploymentType;
     private Integer yearsOfExperience;
 
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "profile_skills", joinColumns = @JoinColumn(name = "profile_id"))
     private List<String> skills = new ArrayList<>();
 
@@ -53,7 +57,7 @@ public class Profile {
         this.preferredLocation = preferredLocation;
         this.desiredEmploymentType = desiredEmploymentType;
         this.yearsOfExperience = yearsOfExperience;
-        this.skills = skills == null ? new ArrayList<>() : new ArrayList<>(skills);
+        this.skills = skills == null ? new ArrayList<>() : new ArrayList<>(skills.stream().filter(Objects::nonNull).toList());
     }
 
     public Long getId() { return id; }
@@ -65,7 +69,7 @@ public class Profile {
     public String getPreferredLocation() { return preferredLocation; }
     public String getDesiredEmploymentType() { return desiredEmploymentType; }
     public Integer getYearsOfExperience() { return yearsOfExperience; }
-    public List<String> getSkills() { return List.copyOf(skills); }
+    public List<String> getSkills() { return skills == null ? List.of() : List.copyOf(skills.stream().filter(Objects::nonNull).toList()); }
 
     public void update(String fullName, String email, String phone, String professionalTitle,
                        String education, String preferredLocation, String desiredEmploymentType,
@@ -78,6 +82,6 @@ public class Profile {
         this.preferredLocation = preferredLocation;
         this.desiredEmploymentType = desiredEmploymentType;
         this.yearsOfExperience = yearsOfExperience;
-        this.skills = skills == null ? new ArrayList<>() : new ArrayList<>(skills);
+        this.skills = skills == null ? new ArrayList<>() : new ArrayList<>(skills.stream().filter(Objects::nonNull).toList());
     }
 }

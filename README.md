@@ -1,13 +1,19 @@
-# Smart Job Application Assistant
+# Smart Job Application Assistant (REF: PRX-2026-01)
 
-Foundation for the Smart Job Application Assistant (PBI-01) with PBIs 02–05 implemented.
+An intelligent platform to simplify and automate the job application lifecycle:
 
-## Architecture
+- **Automated Opportunity Search & Collection:** Automatically discovers and collects job opportunities matching the user's profile, role preferences, and technical skills.
+- **Personalized Documents Generation:** Generates tailored CVs and cover letters adapted to each specific job opportunity.
+- **Selenium Browser Automation:** Automatically navigates to external application portals, maps profile fields, and submits applications on behalf of the user using Selenium WebDriver.
+- **Interactive Application & Document Dashboard:** Tracks pipeline stages (Draft, Applied, Interviewing, Offered, Rejected) and manages documents sent through a unified workspace.
 
-- `frontend/`: React application built with Vite.
-- `backend/`: Spring Boot REST API.
-- `ai-service/`: Python service reserved for matching, document generation, and code analysis.
-- PostgreSQL: local development database managed by Docker Compose.
+## Technologies and Tools
+
+- **Spring Boot:** Backend REST API, persistence, validation, matching engine, and automated job collector.
+- **Selenium:** Headless browser automation engine for pre-filling and submitting web application forms.
+- **React:** Modern, responsive frontend built with Vite, TypeScript, and rich dashboard analytics.
+- **AI Tools:** AI Service (FastAPI) providing Python AST analysis, baseline test generation, and test execution.
+- **PostgreSQL:** Relational database managed via Docker Compose.
 
 ## Prerequisites
 
@@ -16,8 +22,6 @@ Foundation for the Smart Job Application Assistant (PBI-01) with PBIs 02–05 im
 - Node.js 20 or newer and npm
 - Python 3.11 or newer
 - Docker Desktop with Docker Compose
-
-The current environment does not have Node.js, Maven, or Docker installed yet. Install those tools before running the full stack.
 
 ## Getting started
 
@@ -32,7 +36,8 @@ The current environment does not have Node.js, Maven, or Docker installed yet. I
 
    ```powershell
    cd backend
-   mvn spring-boot:run
+   .\mvnw.cmd spring-boot:run
+   # or on Linux/macOS: ./mvnw spring-boot:run
    ```
 
 4. Start the AI service:

@@ -1,6 +1,7 @@
 from subprocess import TimeoutExpired
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from .code_agent import CodeAnalysisError, analyze_source, execute_tests, generate_tests
 from .schemas import SourceRequest, TestExecutionRequest
@@ -9,6 +10,14 @@ app = FastAPI(
     title="Smart Job AI Service",
     version="0.0.1",
     description="AI capabilities for the Smart Job Application Assistant.",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

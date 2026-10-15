@@ -1,5 +1,8 @@
 package com.smartjobs.job;
 
+import com.smartjobs.profile.Profile;
+import com.smartjobs.profile.ProfileNotFoundException;
+import com.smartjobs.profile.ProfileRepository;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -11,9 +14,27 @@ import org.springframework.web.bind.annotation.*;
 public class JobOfferController {
 
     private final JobOfferRepository jobs;
+    private final JobCollectorService collectorService;
+    private final ProfileRepository profiles;
 
-    public JobOfferController(JobOfferRepository jobs) {
+    public JobOfferController(JobOfferRepository jobs, JobCollectorService collectorService, ProfileRepository profiles) {
         this.jobs = jobs;
+        this.collectorService = collectorService;
+        this.profiles = profiles;
+    }
+
+    @PostMapping("/collect-matching")
+    public JobCollectorService.JobCollectionResult collectMatching(@RequestParam Long profileId) {
+        Profile profile = profiles.findById(profileId).orElseThrow(() -> new ProfileNotFoundException(profileId));
+        return collectorService.collectMatchingJobsForProfile(profile);
+    }
+
+    @PostMapping("/collect")
+    public JobCollectorService.JobCollectionResult collect(
+            @RequestParam(required = false, defaultValue = "Software Engineer") String query,
+            @RequestParam(required = false, defaultValue = "Remote") String location
+    ) {
+        return collectorService.collectJobs(query, location, List.of());
     }
 
     @PostMapping

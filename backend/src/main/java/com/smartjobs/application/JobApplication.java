@@ -17,6 +17,7 @@ public class JobApplication {
     private JobOffer job;
     @Enumerated(EnumType.STRING)
     private ApplicationStatus status = ApplicationStatus.DRAFT;
+    @Column(columnDefinition = "TEXT")
     private String notes;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
@@ -33,6 +34,12 @@ public class JobApplication {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void update(ApplicationStatus status, String notes) {
-        this.status = status; this.notes = notes; this.updatedAt = Instant.now();
+        if (status != null) {
+            this.status = status;
+        }
+        if (notes != null) {
+            this.notes = notes;
+        }
+        this.updatedAt = Instant.now();
     }
 }
