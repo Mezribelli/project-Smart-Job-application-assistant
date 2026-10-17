@@ -13,6 +13,9 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+ai-service/data/
+*.db
+coverage.json
 
 # Local configuration and secrets
 .env

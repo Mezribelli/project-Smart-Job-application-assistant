@@ -73,10 +73,63 @@ type AutomationPreview = {
 };
 
 type CodeAnalysis = {
+  language: string;
   functions: string[];
   classes: string[];
   imports: string[];
   lines: number;
+  complexity: number;
+};
+
+type ProviderInfo = {
+  provider: string;
+  available: boolean;
+  model?: string | null;
+  region?: string;
+};
+
+type PipelineStage = {
+  stage: string;
+  durationMs: number;
+  status?: string;
+  coverage?: number | null;
+  provider?: string;
+  runId?: number;
+  error?: string;
+};
+
+type ExecutionResult = {
+  status: string;
+  exitCode: number;
+  output: string;
+  coverage?: number | null;
+  coverageAvailable?: boolean;
+};
+
+type PipelineReport = {
+  analysis: CodeAnalysis;
+  testSource: string;
+  provider: string;
+  model?: string | null;
+  notes: string[];
+  rationale: string;
+  fallback: boolean;
+  execution: ExecutionResult | null;
+  runId: number | null;
+  stages: PipelineStage[];
+};
+
+type HistoryRun = {
+  id: number;
+  language: string;
+  provider: string;
+  model?: string | null;
+  functionsCount: number;
+  classesCount: number;
+  complexity: number;
+  testStatus?: string | null;
+  coverage?: number | null;
+  createdAt?: string | null;
 };
 
 const emptyProfile: Profile = {
@@ -147,8 +200,13 @@ function App() {
   );
   const [codeAnalysis, setCodeAnalysis] = useState<CodeAnalysis | null>(null);
   const [testSource, setTestSource] = useState("");
-  const [testExecutionResult, setTestExecutionResult] = useState<{ status: string; exitCode: number; output: string } | null>(null);
+  const [testExecutionResult, setTestExecutionResult] = useState<ExecutionResult | null>(null);
   const [isExecutingCode, setIsExecutingCode] = useState(false);
+  const [codeLanguage, setCodeLanguage] = useState<"auto" | "python" | "cpp" | "gp" | "generic">("auto");
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [pipelineReport, setPipelineReport] = useState<PipelineReport | null>(null);
+  const [history, setHistory] = useState<HistoryRun[]>([]);
+  const [isRunningPipeline, setIsRunningPipeline] = useState(false);
 
   // Health state
   const [backendHealthy, setBackendHealthy] = useState<boolean | null>(null);
@@ -235,6 +293,12 @@ function App() {
   // Initial load
   useEffect(() => {
     void checkHealth();
+    void apiRequest<{ providers: ProviderInfo[] }>(AI_API, "/api/code/providers")
+      .then((res) => setProviders(res.providers))
+      .catch(() => {});
+    void apiRequest<{ runs: HistoryRun[] }>(AI_API, "/api/code/runs?limit=10")
+      .then((res) => setHistory(res.runs))
+      .catch(() => {});
     void apiRequest<Profile[]>(API, "/api/profiles")
       .then(async (profiles) => {
         if (profiles[0]) {
@@ -477,10 +541,10 @@ function App() {
     try {
       const res = await apiRequest<CodeAnalysis>(AI_API, "/api/code/analyze", {
         method: "POST",
-        body: JSON.stringify({ source: pythonSource }),
+        body: JSON.stringify({ source: pythonSource, language: codeLanguage }),
       });
       setCodeAnalysis(res);
-      showNotice("AST syntax and structure analysis completed.");
+      showNotice(`Analysis completed (${res.language}).`);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Code analysis failed");
     }
@@ -489,13 +553,21 @@ function App() {
   // AI Code Agent: Generate Tests
   const handleGenerateTests = async () => {
     try {
-      const res = await apiRequest<{ analysis: CodeAnalysis; testSource: string }>(AI_API, "/api/code/generate-tests", {
+      const res = await apiRequest<{
+        analysis: CodeAnalysis;
+        testSource: string;
+        provider: string;
+        fallback: boolean;
+        notes: string[];
+      }>(AI_API, "/api/code/generate-tests", {
         method: "POST",
-        body: JSON.stringify({ source: pythonSource }),
+        body: JSON.stringify({ source: pythonSource, language: codeLanguage }),
       });
       setCodeAnalysis(res.analysis);
       setTestSource(res.testSource);
-      showNotice("Baseline pytest suite generated.");
+      showNotice(
+        `pytest suite generated via ${res.provider}${res.fallback ? " (local fallback)" : ""}.`
+      );
     } catch (err) {
       showError(err instanceof Error ? err.message : "Test generation failed");
     }
@@ -509,20 +581,54 @@ function App() {
     }
     setIsExecutingCode(true);
     try {
-      const res = await apiRequest<{ status: string; exitCode: number; output: string }>(
-        AI_API,
-        "/api/code/execute-tests",
-        {
-          method: "POST",
-          body: JSON.stringify({ test_source: testSource }),
-        }
-      );
+      const res = await apiRequest<ExecutionResult>(AI_API, "/api/code/execute-tests", {
+        method: "POST",
+        body: JSON.stringify({ test_source: testSource, source: pythonSource, language: codeLanguage }),
+      });
       setTestExecutionResult(res);
       showNotice(`Tests finished with result: ${res.status}`);
     } catch (err) {
       showError(err instanceof Error ? err.message : "Test execution failed");
     } finally {
       setIsExecutingCode(false);
+    }
+  };
+
+  // AI Code Agent: Full automated pipeline (analyze -> generate -> execute -> persist)
+  const handleRunPipeline = async () => {
+    setIsRunningPipeline(true);
+    try {
+      const res = await apiRequest<PipelineReport>(AI_API, "/api/code/pipeline", {
+        method: "POST",
+        body: JSON.stringify({
+          source: pythonSource,
+          language: codeLanguage,
+          provider: "auto",
+          execute: true,
+          persist: true,
+        }),
+      });
+      setPipelineReport(res);
+      setCodeAnalysis(res.analysis);
+      setTestSource(res.testSource);
+      setTestExecutionResult(res.execution);
+      showNotice(
+        `Pipeline finished: ${res.execution?.status ?? "N/A"} via ${res.provider}${res.fallback ? " (fallback)" : ""}.`
+      );
+      await refreshHistory();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Pipeline run failed");
+    } finally {
+      setIsRunningPipeline(false);
+    }
+  };
+
+  const refreshHistory = async () => {
+    try {
+      const res = await apiRequest<{ runs: HistoryRun[] }>(AI_API, "/api/code/runs?limit=10");
+      setHistory(res.runs);
+    } catch {
+      // history is best-effort
     }
   };
 
@@ -1192,23 +1298,80 @@ function App() {
         <div className="card">
           <h2 className="card-title">AI Code & Test Studio (PBI-09)</h2>
           <p className="card-desc">
-            Local AST static analysis, automated pytest baseline test generation, and isolated execution with timeout protections.
+            Multi-language static analysis (Python, C++, NeoXam GP rule language), AI-generated pytest suites via AWS
+            Bedrock (with local fallback), isolated execution with coverage, and persisted run history.
           </p>
+
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", marginBottom: "1rem" }}>
+            <div className="form-group" style={{ margin: 0, minWidth: "180px" }}>
+              <label>Language</label>
+              <select value={codeLanguage} onChange={(e) => setCodeLanguage(e.target.value as typeof codeLanguage)}>
+                <option value="auto">Auto-detect</option>
+                <option value="python">Python</option>
+                <option value="cpp">C++ (GP)</option>
+                <option value="gp">GP Rule Language</option>
+                <option value="generic">Generic</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label>LLM Provider</label>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", paddingTop: "0.35rem" }}>
+                {providers.length === 0 && <span className="badge">detecting…</span>}
+                {providers.map((p) => (
+                  <span
+                    key={p.provider}
+                    className="badge"
+                    title={p.model ? `${p.model}${p.region ? ` @ ${p.region}` : ""}` : "not configured"}
+                    style={{
+                      borderColor: p.available ? "rgba(52,211,153,0.5)" : "rgba(248,113,113,0.4)",
+                      color: p.available ? "#34d399" : "#f87171",
+                    }}
+                  >
+                    {p.provider === "bedrock" ? "AWS Bedrock" : "Local baseline"} · {p.available ? "ready" : "unavailable"}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="form-group">
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-              <label>Python Solution Source Code</label>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() =>
-                  setPythonSource(
-                    'def binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1\n'
-                  )
-                }
-              >
-                Load Binary Search Example
-              </button>
+              <label>Source Code (solution under test)</label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() =>
+                    setPythonSource(
+                      'def binary_search(arr: list[int], target: int) -> int:\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1\n'
+                    )
+                  }
+                >
+                  Load Python Example
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() =>
+                    setPythonSource(
+                      '#include <string>\n#include <vector>\n\nnamespace gp {\n\nstruct Position {\n    std::string isin;\n    double quantity;\n    double price;\n};\n\nclass PositionValuation {\npublic:\n    double marketValue(const Position& p) {\n        if (p.quantity < 0) {\n            return 0.0;\n        }\n        return p.quantity * p.price;\n    }\n};\n\n}  // namespace gp\n'
+                    )
+                  }
+                >
+                  Load GP C++ Example
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() =>
+                    setPythonSource(
+                      'RULE ComputeNav (portfolioId INT) {\n    SELECT SUM(market_value) INTO nav FROM positions WHERE portfolio_id = portfolioId;\n    RETURN nav;\n}\n\nPROCEDURE PostEntry (entryId INT) {\n    SELECT account_id, amount INTO accountId, amount FROM entries WHERE id = entryId;\n    UPDATE accounts SET balance = balance + amount WHERE id = accountId;\n}\n'
+                    )
+                  }
+                >
+                  Load GP Rule Example
+                </button>
+              </div>
             </div>
             <textarea
               className="code-editor"
@@ -1219,17 +1382,22 @@ function App() {
 
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
             <button className="btn btn-primary" onClick={() => void handleAnalyzeCode()}>
-              🔍 Run AST Analysis
+              🔍 Analyze
             </button>
             <button className="btn btn-secondary" onClick={() => void handleGenerateTests()}>
-              ⚡ Generate pytest Baseline
+              ⚡ Generate pytest Suite
+            </button>
+            <button className="btn btn-success" disabled={isRunningPipeline} onClick={() => void handleRunPipeline()}>
+              {isRunningPipeline ? "Running Pipeline…" : "🤖 Run Full Automated Pipeline"}
             </button>
           </div>
 
           {/* AST Analysis Result */}
           {codeAnalysis && (
             <div style={{ background: "rgba(0,0,0,0.3)", padding: "1.25rem", borderRadius: "var(--radius-md)", marginBottom: "1.5rem" }}>
-              <h3 style={{ fontSize: "1rem", color: "#38bdf8", marginBottom: "0.75rem" }}>AST Structural Analysis</h3>
+              <h3 style={{ fontSize: "1rem", color: "#38bdf8", marginBottom: "0.75rem" }}>
+                Structural Analysis <span className="badge">{codeAnalysis.language}</span>
+              </h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "1rem" }}>
                 <div className="metric-box">
                   <div className="metric-val" style={{ fontSize: "1.8rem" }}>{codeAnalysis.lines}</div>
@@ -1237,16 +1405,60 @@ function App() {
                 </div>
                 <div className="metric-box">
                   <div className="metric-val" style={{ fontSize: "1.8rem" }}>{codeAnalysis.functions.length}</div>
-                  <div className="metric-label">FUNCTIONS ({codeAnalysis.functions.join(", ") || "none"})</div>
+                  <div className="metric-label">FUNCTIONS ({codeAnalysis.functions.slice(0, 6).join(", ") || "none"})</div>
                 </div>
                 <div className="metric-box">
                   <div className="metric-val" style={{ fontSize: "1.8rem" }}>{codeAnalysis.classes.length}</div>
-                  <div className="metric-label">CLASSES ({codeAnalysis.classes.join(", ") || "none"})</div>
+                  <div className="metric-label">CLASSES ({codeAnalysis.classes.slice(0, 6).join(", ") || "none"})</div>
                 </div>
                 <div className="metric-box">
                   <div className="metric-val" style={{ fontSize: "1.8rem" }}>{codeAnalysis.imports.length}</div>
-                  <div className="metric-label">IMPORTS ({codeAnalysis.imports.join(", ") || "none"})</div>
+                  <div className="metric-label">IMPORTS ({codeAnalysis.imports.slice(0, 6).join(", ") || "none"})</div>
                 </div>
+                <div className="metric-box">
+                  <div className="metric-val" style={{ fontSize: "1.8rem" }}>{codeAnalysis.complexity}</div>
+                  <div className="metric-label">CYCLOMATIC COMPLEXITY</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pipeline Report */}
+          {pipelineReport && (
+            <div style={{ background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.25)", padding: "1.25rem", borderRadius: "var(--radius-md)", marginBottom: "1.5rem" }}>
+              <h3 style={{ fontSize: "1rem", color: "#38bdf8", marginBottom: "0.75rem" }}>Automated Pipeline Report</h3>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                <span className="badge">provider: {pipelineReport.provider}{pipelineReport.fallback ? " (fallback)" : ""}</span>
+                {pipelineReport.model && <span className="badge">model: {pipelineReport.model}</span>}
+                {pipelineReport.runId != null && <span className="badge">run #{pipelineReport.runId}</span>}
+                {pipelineReport.execution && (
+                  <span
+                    className="badge"
+                    style={{
+                      color: pipelineReport.execution.status === "OK" ? "#34d399" : "#f87171",
+                      borderColor: pipelineReport.execution.status === "OK" ? "rgba(52,211,153,0.5)" : "rgba(248,113,113,0.4)",
+                    }}
+                  >
+                    tests: {pipelineReport.execution.status}
+                  </span>
+                )}
+                {pipelineReport.execution?.coverage != null && (
+                  <span className="badge">coverage: {pipelineReport.execution.coverage}%</span>
+                )}
+              </div>
+              {pipelineReport.notes.length > 0 && (
+                <ul style={{ margin: "0 0 0.75rem 1.1rem", color: "#94a3b8", fontSize: "0.85rem" }}>
+                  {pipelineReport.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.78rem", color: "#64748b" }}>
+                {pipelineReport.stages.map((s, i) => (
+                  <span key={i}>
+                    {s.stage}: {s.durationMs}ms{s.status ? ` (${s.status})` : ""}
+                  </span>
+                ))}
               </div>
             </div>
           )}
@@ -1280,9 +1492,52 @@ function App() {
                 <span>pytest output</span>
                 <span style={{ marginLeft: "auto", fontWeight: 700, color: testExecutionResult.status === "OK" ? "#34d399" : "#f87171" }}>
                   STATUS: {testExecutionResult.status} (exit code: {testExecutionResult.exitCode})
+                  {testExecutionResult.coverage != null ? ` · coverage ${testExecutionResult.coverage}%` : ""}
                 </span>
               </div>
               <div className="terminal-body">{testExecutionResult.output}</div>
+            </div>
+          )}
+
+          {/* Run History */}
+          {history.length > 0 && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <h3 style={{ fontSize: "1rem", color: "#38bdf8", margin: 0 }}>Recent Analysis Runs (SQL)</h3>
+                <button className="btn btn-secondary btn-sm" onClick={() => void refreshHistory()}>
+                  ↻ Refresh
+                </button>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", color: "#64748b" }}>
+                      <th style={{ padding: "0.4rem" }}>#</th>
+                      <th style={{ padding: "0.4rem" }}>Language</th>
+                      <th style={{ padding: "0.4rem" }}>Provider</th>
+                      <th style={{ padding: "0.4rem" }}>Units</th>
+                      <th style={{ padding: "0.4rem" }}>Complexity</th>
+                      <th style={{ padding: "0.4rem" }}>Tests</th>
+                      <th style={{ padding: "0.4rem" }}>Coverage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((run) => (
+                      <tr key={run.id} style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                        <td style={{ padding: "0.4rem" }}>{run.id}</td>
+                        <td style={{ padding: "0.4rem" }}>{run.language}</td>
+                        <td style={{ padding: "0.4rem" }}>{run.provider}{run.model ? ` / ${run.model}` : ""}</td>
+                        <td style={{ padding: "0.4rem" }}>{run.functionsCount}f · {run.classesCount}c</td>
+                        <td style={{ padding: "0.4rem" }}>{run.complexity}</td>
+                        <td style={{ padding: "0.4rem", color: run.testStatus === "OK" ? "#34d399" : run.testStatus ? "#f87171" : "#64748b" }}>
+                          {run.testStatus ?? "—"}
+                        </td>
+                        <td style={{ padding: "0.4rem" }}>{run.coverage != null ? `${run.coverage}%` : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

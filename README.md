@@ -12,16 +12,18 @@ An intelligent platform to simplify and automate the job application lifecycle:
 - **Spring Boot:** Backend REST API, persistence, validation, matching engine, and automated job collector.
 - **Selenium:** Headless browser automation engine for pre-filling and submitting web application forms.
 - **React:** Modern, responsive frontend built with Vite, TypeScript, and rich dashboard analytics.
-- **AI Tools:** AI Service (FastAPI) providing Python AST analysis, baseline test generation, and test execution.
-- **PostgreSQL:** Relational database managed via Docker Compose.
+- **AI Service (FastAPI):** Multi-language static analysis, AI-powered Python test generation, isolated test execution with coverage, and an automated unit-test pipeline.
+- **AWS Bedrock:** LLM provider (Claude / Llama) for test generation, with an offline baseline fallback.
+- **PostgreSQL / SQLAlchemy:** Relational database for jobs, profiles, and persisted analysis runs.
 
 ## Prerequisites
 
 - Java 21 or newer
-- Maven 3.9 or newer
+- Maven 3.9 or newer (or the bundled `mvnw` wrapper)
 - Node.js 20 or newer and npm
 - Python 3.11 or newer
 - Docker Desktop with Docker Compose
+- (Optional) AWS credentials with Bedrock access for real LLM test generation
 
 ## Getting started
 
@@ -89,25 +91,76 @@ The matching endpoint currently uses a deterministic skill-overlap score. This p
 - `POST /api/code/analyze`
 - `POST /api/code/generate-tests`
 - `POST /api/code/execute-tests`
+- `GET /api/code/providers`
+- `POST /api/code/pipeline`
+- `GET /api/code/runs` and `GET /api/code/runs/{id}`
 
 Generated documents start as `DRAFT`; editing returns them to draft status and approval is always explicit. The application dashboard counts applications by status. The automation API is a safe preview contract: it maps supported profile fields, reports unsupported fields, and rejects submissions without `submissionConfirmed=true`. A browser driver can be connected to this contract in the next hardening increment.
 
-## PBI-09 code-analysis agent
+## PBI-09 intelligent code-analysis & test agent
 
-The AI service accepts Python source code and provides:
+The AI service is an intelligent agent for analysing **NeoXam GP** code (C/C++ and
+the GP rule language), proposing Python `pytest` unit tests, executing them with an
+explicit `OK`/`KO` verdict, and running the whole campaign as an automated pipeline
+with results persisted to SQL.
 
-1. AST-based function, class, import, and line analysis.
-2. A generated `pytest` baseline that must be reviewed before use.
-3. Manual test execution with a 15-second timeout and an explicit `OK` or `KO` result.
+### Capabilities
 
-Example:
+1. **Multi-language static analysis** — Python (`ast`), C++ (GP platform code), and the
+   GP rule DSL; language is auto-detected from the source. Produces functions, classes,
+   imports, line count, and a cyclomatic-complexity estimate.
+2. **AI test generation** — powered by **AWS Bedrock** (Claude / Llama) when configured,
+   with a deterministic offline baseline as fallback. The response always records which
+   provider/model produced the suite and whether a fallback occurred.
+3. **Manual execution** — runs the suite in an isolated subprocess with a timeout and
+   returns `OK`/`KO`, the exit code, the raw `pytest` output, and line coverage.
+4. **Automated pipeline** — one call chains analyze → generate → execute → persist and
+   returns a per-stage report.
+5. **SQL persistence** — every run is stored (SQLite by default, PostgreSQL via
+   `AI_DATABASE_URL`) and exposed through the run-history endpoints.
+
+### Example (PowerShell)
 
 ```powershell
-$body = @{ source = "def add(left, right):`n    return left + right" } | ConvertTo-Json
+$body = @{ source = "def add(left, right):`n    return left + right"; language = "python" } | ConvertTo-Json
 Invoke-RestMethod http://localhost:8000/api/code/generate-tests -Method Post -ContentType "application/json" -Body $body
 ```
 
-This local baseline does not silently claim AI-generated quality. AWS Bedrock can replace or enrich the generation step later, behind the same response contract. Execute only trusted code in an isolated development environment.
+### Automated pipeline CLI
+
+The same pipeline used by the API and CI:
+
+```powershell
+cd ai-service
+.\.venv\Scripts\python.exe run_pipeline.py samples\gp_sample.cpp
+.\.venv\Scripts\python.exe run_pipeline.py samples\gp_rule_sample.gp
+.\.venv\Scripts\python.exe run_pipeline.py samples\solution.py
+```
+
+### AWS Bedrock configuration
+
+| Variable          | Purpose                                    | Default                                        |
+| ----------------- | ------------------------------------------ | ---------------------------------------------- |
+| `BEDROCK_MODEL_ID`| Model / inference profile id               | `anthropic.claude-3-5-sonnet-20240620-v1:0`    |
+| `AWS_REGION`      | Bedrock region (`AWS_DEFAULT_REGION` alias) | `us-east-1`                                    |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials (or use an instance profile) | —                        |
+
+When Bedrock is not configured (or fails), the agent transparently falls back to the
+offline baseline so the pipeline never blocks. The UI badges which provider is active.
+
+### Subject requirement mapping
+
+| Requirement (NeoXam subject)                       | Implementation                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------- |
+| Analyse GP back-office code (C/C++ + rule DSL)     | `ai-service/app/analyzers/{cpp,gp}_analyzer.py`, auto-detection in `detector.py` |
+| Propose Python unit tests                          | `ai-service/app/generator.py` + `app/llm/bedrock_provider.py` / `local_provider.py` |
+| Execute unit tests, report OK / KO                 | `ai-service/app/executor.py`                                          |
+| Automated test pipeline                            | `ai-service/app/pipeline.py`, `/api/code/pipeline`, `.github/workflows/ci.yml` |
+| Python                                             | Entire `ai-service` (FastAPI, pytest, SQLAlchemy)                     |
+| AWS Bedrock (Claude / Llama)                       | `ai-service/app/llm/bedrock_provider.py` (fallback to local)          |
+| SGBD / SQL                                         | `ai-service/app/persistence.py` (SQLAlchemy: SQLite / PostgreSQL)     |
+
+> Execute only trusted code in an isolated development environment.
 
 ## PBI-10 security and delivery baseline
 
